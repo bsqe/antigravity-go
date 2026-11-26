@@ -190,6 +190,18 @@ class HostsNotifier extends AsyncNotifier<HostsState> {
 
   Future<void> updateHostEndpoints(String hostId, List<ChannelEndpoint> endpoints) async {
     final cur = state.valueOrNull ?? const HostsState();
+    HostProfile? existing;
+    for (final h in cur.hosts) {
+      if (h.id == hostId) {
+        existing = h;
+        break;
+      }
+    }
+    if (existing != null) {
+      final before = jsonEncode(existing.endpoints.map((e) => e.toJson()).toList());
+      final after = jsonEncode(endpoints.map((e) => e.toJson()).toList());
+      if (before == after) return;
+    }
     final updated = cur.hosts
         .map((h) => h.id == hostId ? h.copyWith(endpoints: endpoints) : h)
         .toList();

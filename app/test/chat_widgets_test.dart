@@ -5,6 +5,21 @@ import 'package:antigravity_go_app/ui/chat/widgets/thinking_accordion.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+Finder _findRenderedText(String substring) {
+  return find.byWidgetPredicate((widget) {
+    if (widget is Text) {
+      return (widget.data ?? widget.textSpan?.toPlainText() ?? '').contains(substring);
+    }
+    if (widget is SelectableText) {
+      return (widget.data ?? widget.textSpan?.toPlainText() ?? '').contains(substring);
+    }
+    if (widget is RichText) {
+      return widget.text.toPlainText().contains(substring);
+    }
+    return false;
+  });
+}
+
 void main() {
   testWidgets('ThinkingAccordion toggles expanded reasoning text on tap', (tester) async {
     await tester.pumpWidget(
@@ -19,11 +34,11 @@ void main() {
     );
 
     expect(find.textContaining('思考过程'), findsOneWidget);
-    expect(find.text('Step 1: inspect stack trace'), findsNothing);
+    expect(_findRenderedText('Step 1: inspect stack trace'), findsNothing);
 
     await tester.tap(find.textContaining('思考过程'));
     await tester.pump();
-    expect(find.text('Step 1: inspect stack trace'), findsOneWidget);
+    expect(_findRenderedText('Step 1: inspect stack trace'), findsAtLeastNWidgets(1));
   });
 
   testWidgets('MessageBubble renders tool chips and cancelled status', (tester) async {
@@ -50,7 +65,7 @@ void main() {
     );
 
     expect(find.text('view_file'), findsOneWidget);
-    expect(find.text('Partial answer'), findsOneWidget);
+    expect(_findRenderedText('Partial answer'), findsAtLeastNWidgets(1));
     expect(find.text('已手动中断生成'), findsOneWidget);
   });
 

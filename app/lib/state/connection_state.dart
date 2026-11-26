@@ -80,9 +80,11 @@ class ActiveConnectionNotifier extends Notifier<ActiveConnectionState> {
       }
     });
 
-    final hostsAsync = ref.watch(hostsProvider);
-    final host = hostsAsync.valueOrNull?.activeHost;
-    if (host == null) {
+    final activeHostId = ref.watch(
+      hostsProvider.select((asyncHosts) => asyncHosts.valueOrNull?.activeHost?.id),
+    );
+    final host = ref.read(hostsProvider).valueOrNull?.activeHost;
+    if (activeHostId == null || host == null) {
       unawaited(_teardownTransport());
       return const ActiveConnectionState(status: HostLinkStatus.noHost);
     }
