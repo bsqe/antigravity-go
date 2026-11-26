@@ -79,6 +79,22 @@ jobs:
             cp /tmp/AndroidManifest.xml.bak android/app/src/main/AndroidManifest.xml
             rm -f test/widget_test.dart
           fi
+          grep -q "dev.steenbakker.mobile_scanner.useUnbundled" android/gradle.properties || \
+            echo "dev.steenbakker.mobile_scanner.useUnbundled=false" >> android/gradle.properties
+          python3 -c '
+          from pathlib import Path
+          p = Path("android/app/build.gradle.kts")
+          if p.is_file():
+              text = p.read_text(encoding="utf-8")
+              marker = "signingConfig = signingConfigs.getByName(\"debug\")"
+              if "proguard-rules.pro" not in text and marker in text:
+                  text = text.replace(
+                      marker,
+                      marker + "\n            proguardFiles(getDefaultProguardFile(\"proguard-android-optimize.txt\"), \"proguard-rules.pro\")",
+                      1,
+                  )
+                  p.write_text(text, encoding="utf-8")
+          '
 
       - name: Resolve Flutter dependencies
         working-directory: app

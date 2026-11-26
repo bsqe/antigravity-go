@@ -69,6 +69,15 @@ def create_app(
     app.state.tunnel_manager = cf_manager
     app.state.ws_hub = hub
 
+    @app.get("/", include_in_schema=False)
+    async def root() -> dict[str, object]:
+        return {
+            "ok": True,
+            "service": "antigravity-go-bridge",
+            "version": __version__,
+            "ping": "/api/v1/ping",
+        }
+
     app.include_router(auth_router)
     app.include_router(projects_router)
     app.include_router(sessions_router)

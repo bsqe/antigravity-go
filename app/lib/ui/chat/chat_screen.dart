@@ -47,7 +47,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       chatProvider(widget.sessionId).select(
         (s) => s.messages.isEmpty ? 0 : s.messages.last.content.length + s.messages.last.thoughts.length,
       ),
-      (_, __) => _scrollToBottom(),
+      (_, _) => _scrollToBottom(),
     );
 
     return Column(

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../state/hosts_state.dart';
@@ -14,6 +17,8 @@ class QrPairScreen extends ConsumerStatefulWidget {
 class _QrPairScreenState extends ConsumerState<QrPairScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
+  late final MobileScannerController _scanner;
+  final _picker = ImagePicker();
   final _uriController = TextEditingController();
   final _urlController = TextEditingController();
   final _tokenController = TextEditingController();
@@ -27,11 +32,27 @@ class _QrPairScreenState extends ConsumerState<QrPairScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
+    _scanner = MobileScannerController(
+      formats: const [BarcodeFormat.qrCode],
+      detectionSpeed: DetectionSpeed.noDuplicates,
+    );
+    _tabs.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_tabs.indexIsChanging) return;
+    if (_tabs.index == 0) {
+      unawaited(_scanner.start());
+    } else {
+      unawaited(_scanner.stop());
+    }
   }
 
   @override
   void dispose() {
+    _tabs.removeListener(_onTabChanged);
     _tabs.dispose();
+    unawaited(_scanner.dispose());
     _uriController.dispose();
     _urlController.dispose();
     _tokenController.dispose();
@@ -49,11 +70,38 @@ class _QrPairScreenState extends ConsumerState<QrPairScreen>
       await ref.read(hostsProvider.notifier).pairFromUri(rawUri);
       if (mounted) Navigator.of(context).pop(true);
     } catch (err) {
-      setState(() {
-        _pairing = false;
-        _scannedOnce = false;
-        _error = '配对失败: $err';
-      });
+      if (mounted) {
+        setState(() {
+          _pairing = false;
+          _scannedOnce = false;
+          _error = '配对失败: $err';
+        });
+      }
+    }
+  }
+
+  Future<void> _scanFromGallery() async {
+    if (_pairing) return;
+    final picked = await _picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    try {
+      final capture = await _scanner.analyzeImage(picked.path);
+      if (capture != null) {
+        for (final barcode in capture.barcodes) {
+          final value = barcode.rawValue;
+          if (value != null && value.startsWith('agygo://pair')) {
+            await _submitPairingUri(value);
+            return;
+          }
+        }
+      }
+      if (mounted) {
+        setState(() => _error = '未在所选图片中识别到有效的 Antigravity-Go 配对二维码');
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() => _error = '相册识图失败: $err');
+      }
     }
   }
 
@@ -84,10 +132,12 @@ class _QrPairScreenState extends ConsumerState<QrPairScreen>
           );
       if (mounted) Navigator.of(context).pop(true);
     } catch (err) {
-      setState(() {
-        _pairing = false;
-        _error = '手动配对失败: $err';
-      });
+      if (mounted) {
+        setState(() {
+          _pairing = false;
+          _error = '手动配对失败: $err';
+        });
+      }
     }
   }
 
@@ -135,6 +185,69 @@ class _QrPairScreenState extends ConsumerState<QrPairScreen>
     return Stack(
       children: [
         MobileScanner(
+          controller: _scanner,
+          errorBuilder: (context, error) {
+            final details = error.errorDetails?.message;
+            final hint = details != null && details.isNotEmpty
+                ? '${error.errorCode.name}: $details'
+                : error.errorCode.name;
+            return ColoredBox(
+              color: Colors.black,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.videocam_off_outlined,
+                        size: 48,
+                        color: Colors.white70,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '相机启动失败',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        hint,
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: () => unawaited(_scanner.start()),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('重试相机'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _scanFromGallery,
+                            icon: const Icon(Icons.photo_library_outlined),
+                            label: const Text('相册识图'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => _tabs.animateTo(1),
+                            icon: const Icon(Icons.edit_note),
+                            label: const Text('粘贴/手动'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
           onDetect: (capture) {
             if (_scannedOnce || _pairing) return;
             for (final barcode in capture.barcodes) {
@@ -152,11 +265,23 @@ class _QrPairScreenState extends ConsumerState<QrPairScreen>
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            color: Colors.black.withValues(alpha: 0.6),
-            child: const Text(
-              '在电脑终端运行 agy-bridge pair，对准显示的二维码即可自动写入 LAN / Tailscale / Cloudflare 全通道',
-              style: TextStyle(color: Colors.white),
-              textAlign: TextAlign.center,
+            color: Colors.black.withValues(alpha: 0.65),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '对准电脑端 AntigravityGoBridge 显示的二维码，自动写入 LAN / Tailscale / Cloudflare 全通道',
+                  style: TextStyle(color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: _pairing ? null : _scanFromGallery,
+                  style: TextButton.styleFrom(foregroundColor: Colors.white),
+                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  label: const Text('或从相册选择二维码截图'),
+                ),
+              ],
             ),
           ),
         ),
