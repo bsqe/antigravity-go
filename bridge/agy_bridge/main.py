@@ -77,11 +77,10 @@ def _interactive_first_run_setup(cfg_mgr: ConfigManager) -> None:
         except EOFError:
             entered = ""
         if entered:
-            next_mode = "vertex" if entered.startswith("AQ.") else "api_key"
             cfg = cfg_mgr.save(
-                cfg.model_copy(update={"gemini_api_key": entered, "auth_mode": next_mode})
+                cfg.model_copy(update={"gemini_api_key": entered, "auth_mode": "api_key"})
             )
-            print(f"已保存 API Key 到 {cfg_mgr.config_path} (模式: {next_mode})。\n")
+            print(f"已保存 API Key 到 {cfg_mgr.config_path} (模式: api_key)。\n")
 
     store = BridgeStore(cfg_mgr.db_path)
     try:

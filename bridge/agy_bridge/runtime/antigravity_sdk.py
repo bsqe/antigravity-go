@@ -86,8 +86,7 @@ class AntigravitySdkRuntime(AgentRuntime):
             config_kwargs["model"] = effective_model
 
         api_key = self._config.effective_api_key()
-        is_vertex_express_key = api_key.startswith("AQ.")
-        if self._config.auth_mode == "vertex" or is_vertex_express_key:
+        if self._config.auth_mode == "vertex":
             config_kwargs["vertex"] = True
             if api_key:
                 config_kwargs["api_key"] = api_key

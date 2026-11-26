@@ -40,10 +40,9 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-配置官方 SDK 凭据（三选一）：
-- **Gemini API Key (`AIza...`)**：设置环境变量 `GEMINI_API_KEY`（默认模式 `api_key`）
-- **Vertex AI Express Mode Key (`AQ....`)**：同样填入 `GEMINI_API_KEY`，Bridge 会自动识别并启用 Vertex 模式
-- **Vertex AI ADC**：登录 `gcloud auth application-default login` 后启动时加 `--auth-mode vertex`
+配置官方 SDK 凭据（二选一）：
+- **Google AI Studio API Key（推荐，免费免绑卡）**：设置环境变量 `GEMINI_API_KEY` 或写入 `bridge-config.json`（默认模式 `api_key`，同时兼容 2026 新版 `AQ....` 与旧版 `AIza...` 前缀）
+- **Vertex AI（GCP 项目 / ADC / Vertex Express）**：启动时显式加上 `--auth-mode vertex`（或在配置中设 `"auth_mode": "vertex"`）
 
 登记一个允许远程访问的工作区目录并启动（加 `--trust-root` 会自动加入允许根目录白名单，无需手改 JSON）：
 

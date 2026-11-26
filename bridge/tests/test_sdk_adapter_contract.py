@@ -53,20 +53,24 @@ def test_build_local_config_accepts_real_sdk_types(tmp_path: Path) -> None:
     assert ag.BuiltinTools.VIEW_FILE in (local_cfg.capabilities.enabled_tools or [])
     assert ag.BuiltinTools.RUN_COMMAND not in (local_cfg.capabilities.enabled_tools or [])
 
-    # Vertex Express Mode key (`AQ.*`) auto-selects vertex=True and passes api_key
-    express_cfg = BridgeConfig(auth_mode="api_key", gemini_api_key="AQ.test_express_key")
-    express_runtime = AntigravitySdkRuntime(express_cfg, tmp_path / "sdk_sessions_ex")
-    ex_local = express_runtime._build_local_config(
+    # 2026 Google AI Studio `AQ.*` keys stay on Gemini Developer API (vertex=None) under api_key mode
+    aistudio_aq_cfg = BridgeConfig(auth_mode="api_key", gemini_api_key="AQ.test_aistudio_key")
+    aistudio_aq_runtime = AntigravitySdkRuntime(aistudio_aq_cfg, tmp_path / "sdk_sessions_aq")
+    aq_local = aistudio_aq_runtime._build_local_config(
         session_id=uuid_sid,
         workspace_dir=tmp_path,
         model=None,
     )
-    assert isinstance(ex_local, ag.LocalAgentConfig)
-    assert ex_local.vertex is True
-    assert ex_local.api_key == "AQ.test_express_key"
+    assert isinstance(aq_local, ag.LocalAgentConfig)
+    assert not aq_local.vertex
+    assert aq_local.api_key == "AQ.test_aistudio_key"
 
-    # Vertex mode builds cleanly as well
-    vertex_cfg = BridgeConfig(auth_mode="vertex", sdk_allow_write_tools=True)
+    # Explicit Vertex mode (ADC or Vertex Express API key) enables vertex=True
+    vertex_cfg = BridgeConfig(
+        auth_mode="vertex",
+        gemini_api_key="AQ.test_vertex_key",
+        sdk_allow_write_tools=True,
+    )
     vertex_runtime = AntigravitySdkRuntime(vertex_cfg, tmp_path / "sdk_sessions_v")
     v_local = vertex_runtime._build_local_config(
         session_id="ses_v",
@@ -75,6 +79,7 @@ def test_build_local_config_accepts_real_sdk_types(tmp_path: Path) -> None:
     )
     assert isinstance(v_local, ag.LocalAgentConfig)
     assert v_local.vertex is True
+    assert v_local.api_key == "AQ.test_vertex_key"
 
 
 def test_build_prompt_payload_creates_real_sdk_image(tmp_path: Path) -> None:
