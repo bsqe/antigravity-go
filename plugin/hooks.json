@@ -1,0 +1,31 @@
+{
+  "antigravity-go-observer": {
+    "enabled": true,
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python ./scripts/hook_forward.py",
+        "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ./scripts/hook_forward.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python ./scripts/hook_forward.py",
+        "timeout": 5
+      }
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+# Python
+bridge/.venv/
+bridge/build/
+bridge/dist/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+*.exe
+
+# Local bridge state & secrets
+.antigravity-go/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+bridge-config.json
+
+# Dart & Flutter
+.dart_tool/
+.packages
+build/
+**/build/
+*.iml
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/android/local.properties
+app/android/key.properties
+*.jks
+*.keystore

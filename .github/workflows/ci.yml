@@ -1,0 +1,98 @@
+name: Antigravity-Go CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  bridge-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install bridge dependencies
+        run: python -m pip install -e "./bridge[dev]"
+      - name: Run bridge pytest suite
+        run: python -m pytest -v bridge/tests
+
+  bridge-exe-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install bridge and PyInstaller
+        run: python -m pip install -e "./bridge" pyinstaller
+      - name: Build AntigravityGoBridge.exe (--onedir)
+        working-directory: bridge
+        run: python -m PyInstaller antigravity-go-bridge.spec --noconfirm --clean
+      - name: Verify built executable CLI and bundled runtime
+        shell: pwsh
+        run: |
+          .\bridge\dist\AntigravityGoBridge\AntigravityGoBridge.exe --help
+          if (-not (Test-Path .\bridge\dist\AntigravityGoBridge\_internal\google\antigravity\bin\localharness.exe)) {
+            throw "Missing bundled google.antigravity localharness.exe"
+          }
+      - name: Zip Windows portable bundle
+        shell: pwsh
+        run: Compress-Archive -Path .\bridge\dist\AntigravityGoBridge\* -DestinationPath .\AntigravityGoBridge-win-x64.zip
+      - name: Upload Windows EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: antigravity-go-bridge-win-x64
+          path: AntigravityGoBridge-win-x64.zip
+
+  flutter-test-and-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Test pure Dart client (packages/agy_client)
+        working-directory: packages/agy_client
+        run: |
+          dart pub get
+          dart analyze
+          dart test
+
+      - name: Bootstrap missing Android Gradle wrapper if absent
+        working-directory: app
+        run: |
+          if [ ! -f android/gradlew ]; then
+            cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml.bak
+            flutter create --platforms=android --org dev.antigravitygo --project-name antigravity_go_app .
+            cp /tmp/AndroidManifest.xml.bak android/app/src/main/AndroidManifest.xml
+            rm -f test/widget_test.dart
+          fi
+
+      - name: Analyze and test Flutter app
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Build Android release APKs
+        working-directory: app
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload Android APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: antigravity-go-android-apks
+          path: app/build/app/outputs/flutter-apk/*.apk

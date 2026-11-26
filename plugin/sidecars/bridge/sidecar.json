@@ -1,0 +1,7 @@
+{
+  "display_name": "Antigravity-Go Bridge",
+  "description": "Local authenticated REST/WebSocket bridge managed by Antigravity 2.0 Sidecar lifecycle",
+  "command": "python",
+  "args": ["-m", "agy_bridge.main", "start", "--managed"],
+  "restart_policy": "on-failure"
+}
