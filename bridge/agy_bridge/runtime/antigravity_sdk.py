@@ -55,6 +55,7 @@ class AntigravitySdkRuntime(AgentRuntime):
         model: str | None,
     ) -> Any:
         import google.antigravity as ag
+        from google.antigravity import types as ag_types
 
         capabilities_kwargs: dict[str, Any] = {}
         if not self._config.sdk_allow_write_tools:
@@ -70,10 +71,13 @@ class AntigravitySdkRuntime(AgentRuntime):
             if len(session_id) >= 32
             else str(uuid.uuid5(uuid.NAMESPACE_URL, f"agy-go:{session_id}"))
         )
+        session_save_dir = self._save_dir / sdk_conversation_id
+        session_save_dir.mkdir(parents=True, exist_ok=True)
         config_kwargs: dict[str, Any] = {
             "workspaces": [str(workspace_dir)],
             "conversation_id": sdk_conversation_id,
-            "save_dir": str(self._save_dir / session_id),
+            "session_continuation_mode": ag_types.SessionContinuationMode.CREATE_OR_RESUME,
+            "save_dir": str(session_save_dir),
             "capabilities": ag.CapabilitiesConfig(**capabilities_kwargs),
         }
 

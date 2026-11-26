@@ -39,6 +39,7 @@ def test_build_local_config_accepts_real_sdk_types(tmp_path: Path) -> None:
     )
     assert isinstance(local_cfg, ag.LocalAgentConfig)
     assert local_cfg.conversation_id == uuid_sid
+    assert local_cfg.session_continuation_mode == ag_types.SessionContinuationMode.CREATE_OR_RESUME
     assert local_cfg.workspaces == [str(tmp_path)]
 
     # Short session IDs are normalized deterministically to satisfy SDK >= 32 char constraint
