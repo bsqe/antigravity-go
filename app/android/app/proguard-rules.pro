@@ -5,6 +5,8 @@
 -keep class io.flutter.view.** { *; }
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
+-dontwarn com.google.android.play.core.**
+-dontwarn io.flutter.**
 
 # Keep mobile_scanner, CameraX, and bundled ML Kit / Barhopper classes under R8
 -keep class dev.steenbakker.mobile_scanner.** { *; }
