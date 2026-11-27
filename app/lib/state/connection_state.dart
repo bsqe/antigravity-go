@@ -122,21 +122,22 @@ class ActiveConnectionNotifier extends Notifier<ActiveConnectionState> {
     }
 
     final racer = ChannelRacer();
-    final probes = await racer.probeAll(host.endpoints);
+    final winner = await racer.selectFastest(host.endpoints);
     if (gen != _generation) return;
 
-    ChannelProbeResult? winner;
-    for (final p in probes) {
-      if (p.reachable) {
-        winner = p;
-        break;
-      }
-    }
-
     if (winner == null) {
+      final failedProbes = host.endpoints
+          .map(
+            (e) => ChannelProbeResult(
+              endpoint: e,
+              reachable: false,
+              error: 'Unreachable',
+            ),
+          )
+          .toList();
       state = state.copyWith(
         status: HostLinkStatus.offline,
-        probes: probes,
+        probes: failedProbes,
         error: 'All configured channels are unreachable.',
       );
       return;
@@ -155,13 +156,22 @@ class ActiveConnectionNotifier extends Notifier<ActiveConnectionState> {
       host: host,
       activeEndpoint: winner.endpoint,
       latencyMs: winner.latencyMs,
-      probes: probes,
+      probes: [winner],
       httpApi: api,
       wsClient: ws,
       wsState: WsConnectionState.connecting,
     );
 
     await ws.connect();
+
+    // Populate full per-channel diagnostics in the background without blocking live connection
+    unawaited(
+      racer.probeAll(host.endpoints).then((allProbes) {
+        if (gen == _generation && allProbes.isNotEmpty) {
+          state = state.copyWith(probes: allProbes);
+        }
+      }),
+    );
 
     // Sync freshly discovered channels (e.g. newly started Cloudflare quick tunnel)
     try {

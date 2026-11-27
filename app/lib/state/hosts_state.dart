@@ -98,39 +98,73 @@ class HostsNotifier extends AsyncNotifier<HostsState> {
     final payload = parsePairingUri(rawUri);
     final racer = ChannelRacer();
     final fastest = await racer.selectFastest(payload.endpoints);
-    final targetEndpoint = fastest?.endpoint ?? payload.endpoints.first;
 
-    final api = AgyHttpApi(baseUrl: targetEndpoint.baseUrl);
-    try {
-      final pairRes = await api.pair(
-        pairingToken: payload.pairingToken,
-        deviceName: (deviceName != null && deviceName.trim().isNotEmpty)
-            ? deviceName.trim()
-            : _defaultDeviceName(),
-        platform: Platform.operatingSystem,
-      );
-
-      final hostId = 'host_${DateTime.now().millisecondsSinceEpoch}';
-      final storage = ref.read(secureStorageProvider);
-      await storage.write(key: 'agy_host_token_$hostId', value: pairRes.deviceToken);
-
-      final profile = HostProfile(
-        id: hostId,
-        name: pairRes.hostName.isNotEmpty ? pairRes.hostName : payload.hostName,
-        deviceId: pairRes.deviceId,
-        endpoints: payload.endpoints,
-      );
-
-      final cur = state.valueOrNull ?? const HostsState();
-      final next = cur.copyWith(
-        hosts: [profile, ...cur.hosts],
-        activeHostId: profile.id,
-      );
-      await _persist(next);
-      return profile;
-    } finally {
-      api.close();
+    final ordered = <ChannelEndpoint>[];
+    if (fastest != null) {
+      ordered.add(fastest.endpoint);
     }
+    // Prefer remote-routable tunnels before LAN when race did not yield an immediate winner
+    final remaining = payload.endpoints
+        .where((e) => ordered.every((picked) => picked.baseUrl != e.baseUrl))
+        .toList()
+      ..sort((a, b) {
+        int rank(ChannelKind k) {
+          switch (k) {
+            case ChannelKind.cloudflare:
+              return 0;
+            case ChannelKind.tailscale:
+              return 1;
+            case ChannelKind.lan:
+              return 2;
+          }
+        }
+
+        return rank(a.kind).compareTo(rank(b.kind));
+      });
+    ordered.addAll(remaining);
+
+    Object? lastError;
+    PairResult? pairRes;
+    for (final ep in ordered) {
+      final api = AgyHttpApi(baseUrl: ep.baseUrl);
+      try {
+        pairRes = await api.pair(
+          pairingToken: payload.pairingToken,
+          deviceName: (deviceName != null && deviceName.trim().isNotEmpty)
+              ? deviceName.trim()
+              : _defaultDeviceName(),
+          platform: Platform.operatingSystem,
+        );
+        break;
+      } catch (err) {
+        lastError = err;
+      } finally {
+        api.close();
+      }
+    }
+
+    if (pairRes == null) {
+      throw lastError ?? StateError('All pairing endpoints failed.');
+    }
+
+    final hostId = 'host_${DateTime.now().millisecondsSinceEpoch}';
+    final storage = ref.read(secureStorageProvider);
+    await storage.write(key: 'agy_host_token_$hostId', value: pairRes.deviceToken);
+
+    final profile = HostProfile(
+      id: hostId,
+      name: pairRes.hostName.isNotEmpty ? pairRes.hostName : payload.hostName,
+      deviceId: pairRes.deviceId,
+      endpoints: payload.endpoints,
+    );
+
+    final cur = state.valueOrNull ?? const HostsState();
+    final next = cur.copyWith(
+      hosts: [profile, ...cur.hosts],
+      activeHostId: profile.id,
+    );
+    await _persist(next);
+    return profile;
   }
 
   /// Pairs manually by URL + 48-char pairing token (e.g. Tailscale or LAN IP).

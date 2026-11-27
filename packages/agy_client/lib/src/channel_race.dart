@@ -28,7 +28,7 @@ class ChannelProbeResult {
 class ChannelRacer {
   ChannelRacer({
     http.Client? httpClient,
-    this.timeout = const Duration(milliseconds: 2500),
+    this.timeout = const Duration(seconds: 8),
   }) : _http = httpClient ?? http.Client();
 
   final http.Client _http;
@@ -86,12 +86,29 @@ class ChannelRacer {
     return results;
   }
 
-  /// Picks the fastest reachable endpoint, or `null` if none answered.
+  /// Picks the first reachable endpoint as soon as it answers (returning in ~10ms
+  /// on LAN while still allowing up to `timeout` for Cloudflare DNS/TLS handshakes).
   Future<ChannelProbeResult?> selectFastest(List<ChannelEndpoint> endpoints) async {
-    final results = await probeAll(endpoints);
-    for (final r in results) {
-      if (r.reachable) return r;
+    final active = endpoints.where((e) => e.available && e.baseUrl.isNotEmpty).toList();
+    if (active.isEmpty) return null;
+
+    final completer = Completer<ChannelProbeResult?>();
+    var remaining = active.length;
+
+    for (final ep in active) {
+      unawaited(
+        probeOne(ep).then((result) {
+          if (result.reachable && !completer.isCompleted) {
+            completer.complete(result);
+            return;
+          }
+          remaining -= 1;
+          if (remaining == 0 && !completer.isCompleted) {
+            completer.complete(null);
+          }
+        }),
+      );
     }
-    return null;
+    return completer.future;
   }
 }
