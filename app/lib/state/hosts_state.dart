@@ -123,28 +123,39 @@ class HostsNotifier extends AsyncNotifier<HostsState> {
       });
     ordered.addAll(remaining);
 
-    Object? lastError;
+    final errors = <String>[];
     PairResult? pairRes;
     for (final ep in ordered) {
-      final api = AgyHttpApi(baseUrl: ep.baseUrl);
-      try {
-        pairRes = await api.pair(
-          pairingToken: payload.pairingToken,
-          deviceName: (deviceName != null && deviceName.trim().isNotEmpty)
-              ? deviceName.trim()
-              : _defaultDeviceName(),
-          platform: Platform.operatingSystem,
-        );
-        break;
-      } catch (err) {
-        lastError = err;
-      } finally {
-        api.close();
+      final attempts = ep.kind == ChannelKind.cloudflare ? 2 : 1;
+      for (var attempt = 0; attempt < attempts; attempt++) {
+        if (attempt > 0) {
+          await Future<void>.delayed(const Duration(seconds: 3));
+        }
+        final api = AgyHttpApi(baseUrl: ep.baseUrl);
+        try {
+          pairRes = await api.pair(
+            pairingToken: payload.pairingToken,
+            deviceName: (deviceName != null && deviceName.trim().isNotEmpty)
+                ? deviceName.trim()
+                : _defaultDeviceName(),
+            platform: Platform.operatingSystem,
+          );
+          break;
+        } catch (err) {
+          if (attempt == attempts - 1) {
+            errors.add('[${ep.kind.shortLabel}] ${ep.baseUrl}: $err');
+          }
+        } finally {
+          api.close();
+        }
       }
+      if (pairRes != null) break;
     }
 
     if (pairRes == null) {
-      throw lastError ?? StateError('All pairing endpoints failed.');
+      throw StateError(
+        errors.isNotEmpty ? errors.join('\n') : 'All pairing endpoints failed.',
+      );
     }
 
     final hostId = 'host_${DateTime.now().millisecondsSinceEpoch}';

@@ -115,6 +115,7 @@ class CloudflaredManager:
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._url_ready = asyncio.Event()
+        self._conn_registered = asyncio.Event()
         self._recent_logs: deque[str] = deque(maxlen=15)
 
     @property
@@ -153,6 +154,7 @@ class CloudflaredManager:
             return self.state
 
         self._url_ready.clear()
+        self._conn_registered.clear()
         self._recent_logs.clear()
         self.state = TunnelState(mode="quick", running=False)
         spawn_kwargs: dict[str, object] = {
@@ -181,6 +183,15 @@ class CloudflaredManager:
                 if tail
                 else "Timed out waiting for trycloudflare.com URL"
             )
+            return self.state
+
+        if self.state.running and self.state.public_url:
+            # Wait briefly for Cloudflare edge to register the first tunnel connection
+            # so scanning the QR code immediately does not hit 530 / 1033.
+            try:
+                await asyncio.wait_for(self._conn_registered.wait(), timeout=8.0)
+            except TimeoutError:
+                pass
         return self.state
 
     async def start_named(self, token: str, hostname: str) -> TunnelState:
@@ -272,6 +283,8 @@ class CloudflaredManager:
                         self.state.running = True
                         self.state.last_error = ""
                         self._url_ready.set()
+                    if "registered tunnel connection" in line.lower():
+                        self._conn_registered.set()
         except asyncio.CancelledError:
             raise
         finally:
@@ -282,3 +295,5 @@ class CloudflaredManager:
                 if tail and not self.state.last_error:
                     self.state.last_error = tail
                 self._url_ready.set()
+            if expect_quick_url and not self._conn_registered.is_set():
+                self._conn_registered.set()
