@@ -137,23 +137,26 @@ void main() {
           );
         }
         if (req.url.path == '/api/v1/desktop/conversations/desktop-1111-2222-3333-444455556666/continue') {
-          return http.Response(
-            jsonEncode({
-              'session': {
-                'id': 'ses_cont_1',
-                'projectId': 'proj_1',
-                'projectName': 'Repo',
-                'title': '[接力] Fix build issue',
-                'status': 'idle',
-                'lastSeq': 6,
-                'sourceDesktopId': 'desktop-1111-2222-3333-444455556666',
-                'createdAtMs': 7000,
-                'updatedAtMs': 7000,
-              },
-              'importedMessages': 6,
-              'reused': false,
-            }),
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode({
+                'session': {
+                  'id': 'ses_cont_1',
+                  'projectId': 'proj_1',
+                  'projectName': 'Repo',
+                  'title': '[接力] Fix build issue',
+                  'status': 'idle',
+                  'lastSeq': 6,
+                  'sourceDesktopId': 'desktop-1111-2222-3333-444455556666',
+                  'createdAtMs': 7000,
+                  'updatedAtMs': 7000,
+                },
+                'importedMessages': 6,
+                'reused': false,
+              }),
+            ),
             201,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
           );
         }
         if (req.url.path == '/api/v1/sessions/ses_cont_1/sync-desktop') {
