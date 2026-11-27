@@ -7,9 +7,14 @@ import 'widgets/composer_bar.dart';
 import 'widgets/message_bubble.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.sessionId});
+  const ChatScreen({
+    super.key,
+    required this.sessionId,
+    this.sourceDesktopId,
+  });
 
   final String sessionId;
+  final String? sourceDesktopId;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -37,6 +42,68 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
+  Future<void> _syncDesktopNow() async {
+    try {
+      final added = await ref
+          .read(chatProvider(widget.sessionId).notifier)
+          .syncFromDesktop();
+      if (!mounted) return;
+      final text = added > 0 ? '已从电脑端增量同步 $added 条新记录' : '已是最新，电脑端暂无新对话';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('同步电脑端失败: $err')),
+      );
+    }
+  }
+
+  Widget _buildErrorBanner(BuildContext context, String errorText) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 110),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                errorText,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onErrorContainer,
+                    ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => ref.invalidate(chatProvider(widget.sessionId)),
+                child: const Text('重试'),
+              ),
+              TextButton(
+                onPressed: () =>
+                    ref.read(chatProvider(widget.sessionId).notifier).clearError(),
+                child: const Text('关闭'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final chat = ref.watch(chatProvider(widget.sessionId));
@@ -52,16 +119,49 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     return Column(
       children: [
-        if (chat.error != null)
-          MaterialBanner(
-            content: Text(chat.error!),
-            actions: [
-              TextButton(
-                onPressed: () => ref.invalidate(chatProvider(widget.sessionId)),
-                child: const Text('重试'),
+        if (widget.sourceDesktopId != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
+              border: Border(
+                bottom: BorderSide(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withValues(alpha: 0.5),
+                ),
               ),
-            ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.desktop_windows_outlined, size: 16),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '接力自电脑端对话',
+                    style: Theme.of(context).textTheme.labelMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: chat.syncingDesktop || chat.isGenerating
+                      ? null
+                      : _syncDesktopNow,
+                  icon: chat.syncingDesktop
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.sync, size: 16),
+                  label: const Text('同步电脑进展'),
+                ),
+              ],
+            ),
           ),
+        if (chat.error != null) _buildErrorBanner(context, chat.error!),
         Expanded(
           child: chat.loading && chat.messages.isEmpty
               ? const Center(child: CircularProgressIndicator())

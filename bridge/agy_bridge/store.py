@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     model TEXT,
     status TEXT NOT NULL DEFAULT 'idle',
     last_seq INTEGER NOT NULL DEFAULT 0,
+    source_desktop_id TEXT,
+    system_context TEXT,
+    synced_desktop_step INTEGER NOT NULL DEFAULT -1,
     created_at_ms INTEGER NOT NULL,
     updated_at_ms INTEGER NOT NULL
 );
@@ -124,7 +127,25 @@ class BridgeStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(SCHEMA_SQL)
+            self._ensure_session_migrations()
             self._conn.commit()
+
+    def _ensure_session_migrations(self) -> None:
+        cols = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        if "source_desktop_id" not in cols:
+            self._conn.execute("ALTER TABLE sessions ADD COLUMN source_desktop_id TEXT")
+        if "system_context" not in cols:
+            self._conn.execute("ALTER TABLE sessions ADD COLUMN system_context TEXT")
+        if "synced_desktop_step" not in cols:
+            self._conn.execute(
+                "ALTER TABLE sessions ADD COLUMN synced_desktop_step INTEGER NOT NULL DEFAULT -1"
+            )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_source_desktop ON sessions(source_desktop_id)"
+        )
 
     def close(self) -> None:
         with self._lock:
@@ -286,7 +307,14 @@ class BridgeStore:
     # ── Sessions ──────────────────────────────────────────────────────────────
 
     def create_session(
-        self, project_id: str, title: str, model: str | None = None
+        self,
+        project_id: str,
+        title: str,
+        model: str | None = None,
+        *,
+        source_desktop_id: str | None = None,
+        system_context: str | None = None,
+        synced_desktop_step: int = -1,
     ) -> SessionInfo | None:
         proj = self.get_project(project_id)
         if proj is None:
@@ -296,10 +324,24 @@ class BridgeStore:
         with self._lock:
             self._conn.execute(
                 """
-                INSERT INTO sessions (id, project_id, title, model, status, last_seq, created_at_ms, updated_at_ms)
-                VALUES (?, ?, ?, ?, 'idle', 0, ?, ?)
+                INSERT INTO sessions (
+                    id, project_id, title, model, status, last_seq,
+                    source_desktop_id, system_context, synced_desktop_step,
+                    created_at_ms, updated_at_ms
+                )
+                VALUES (?, ?, ?, ?, 'idle', 0, ?, ?, ?, ?, ?)
                 """,
-                (session_id, project_id, title, model, ts, ts),
+                (
+                    session_id,
+                    project_id,
+                    title,
+                    model,
+                    source_desktop_id,
+                    system_context,
+                    synced_desktop_step,
+                    ts,
+                    ts,
+                ),
             )
             self._conn.commit()
         return SessionInfo(
@@ -310,9 +352,124 @@ class BridgeStore:
             model=model,
             status="idle",
             lastSeq=0,
+            sourceDesktopId=source_desktop_id,
             createdAtMs=ts,
             updatedAtMs=ts,
         )
+
+    def get_all_session_ids(self) -> set[str]:
+        with self._lock:
+            rows = self._conn.execute("SELECT id FROM sessions").fetchall()
+        return {str(r["id"]) for r in rows}
+
+    def list_linked_desktop_sessions(self) -> dict[str, str]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT id, source_desktop_id
+                FROM sessions
+                WHERE source_desktop_id IS NOT NULL AND source_desktop_id != ''
+                ORDER BY updated_at_ms DESC
+                """
+            ).fetchall()
+        mapping: dict[str, str] = {}
+        for r in rows:
+            did = str(r["source_desktop_id"])
+            if did not in mapping:
+                mapping[did] = str(r["id"])
+        return mapping
+
+    def find_session_by_desktop_id(
+        self, desktop_id: str, project_id: str | None = None
+    ) -> SessionInfo | None:
+        query = """
+            SELECT s.*, p.name AS project_name
+            FROM sessions s
+            JOIN projects p ON p.id = s.project_id
+            WHERE s.source_desktop_id = ?
+        """
+        params: list[Any] = [desktop_id]
+        if project_id is not None:
+            query += " AND s.project_id = ?"
+            params.append(project_id)
+        query += " ORDER BY s.updated_at_ms DESC LIMIT 1"
+        with self._lock:
+            row = self._conn.execute(query, tuple(params)).fetchone()
+        return self._row_to_session(row) if row is not None else None
+
+    def get_session_runtime_context(self, session_id: str) -> tuple[str | None, int]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT system_context, synced_desktop_step FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None, -1
+        return row["system_context"], int(row["synced_desktop_step"])
+
+    def import_desktop_messages(
+        self,
+        session_id: str,
+        messages: list[Any],
+        *,
+        max_step: int,
+        system_context: str,
+    ) -> int:
+        """Idempotently append only desktop turns newer than `synced_desktop_step`."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT last_seq, synced_desktop_step FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown session: {session_id}")
+            seq = int(row["last_seq"])
+            prev_step = int(row["synced_desktop_step"])
+            added = 0
+            for msg in messages:
+                step_idx = int(getattr(msg, "step_index", -1))
+                if step_idx <= prev_step:
+                    continue
+                seq += 1
+                msg_id = f"msg_{uuid.uuid4().hex[:14]}"
+                tools_json = json.dumps(
+                    [t.model_dump(mode="json") for t in getattr(msg, "tool_events", [])],
+                    ensure_ascii=False,
+                )
+                created = int(getattr(msg, "created_at_ms", 0) or now_ms())
+                updated = int(getattr(msg, "updated_at_ms", 0) or created)
+                self._conn.execute(
+                    """
+                    INSERT INTO messages
+                    (id, session_id, turn_id, role, content, thoughts, tool_events_json, attachment_ids_json, status, seq, created_at_ms, updated_at_ms)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 'completed', ?, ?, ?)
+                    """,
+                    (
+                        msg_id,
+                        session_id,
+                        str(getattr(msg, "turn_id", f"desktop_{step_idx}")),
+                        str(getattr(msg, "role", "assistant")),
+                        str(getattr(msg, "content", "")),
+                        str(getattr(msg, "thoughts", "")),
+                        tools_json,
+                        seq,
+                        created,
+                        updated,
+                    ),
+                )
+                added += 1
+
+            new_step = max(prev_step, max_step)
+            self._conn.execute(
+                """
+                UPDATE sessions
+                SET last_seq = ?, synced_desktop_step = ?, system_context = ?, updated_at_ms = ?
+                WHERE id = ?
+                """,
+                (seq, new_step, system_context, now_ms(), session_id),
+            )
+            self._conn.commit()
+            return added
 
     def list_sessions(self, project_id: str | None = None) -> list[SessionInfo]:
         query = """
@@ -682,6 +839,7 @@ class BridgeStore:
             model=row["model"],
             status=row["status"],
             lastSeq=row["last_seq"],
+            sourceDesktopId=row["source_desktop_id"],
             createdAtMs=row["created_at_ms"],
             updatedAtMs=row["updated_at_ms"],
         )

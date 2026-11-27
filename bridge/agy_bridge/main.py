@@ -51,6 +51,7 @@ def _print_pairing_banner(cfg_mgr: ConfigManager, cf_mgr: CloudflaredManager) ->
     print(f"Host Name   : {status.hostName}")
     print(f"Listen Port : {status.port}")
     print(f"Auth Mode   : {cfg_mgr.config.auth_mode}")
+    print(f"Tool Policy : {cfg_mgr.config.effective_tool_policy()}")
     print(f"API Key Set : {'Yes' if cfg_mgr.config.effective_api_key() else 'No'}")
     print(f"Data Dir    : {cfg_mgr.data_dir}")
     print("Endpoints   :")
@@ -125,7 +126,11 @@ def cmd_start(args: argparse.Namespace) -> int:
         updates["auth_mode"] = args.auth_mode
     if args.cloudflared is not None:
         updates["cloudflared_mode"] = args.cloudflared
-    if args.allow_write_tools:
+    if args.tool_policy is not None:
+        updates["sdk_tool_policy"] = args.tool_policy
+        updates["sdk_allow_write_tools"] = args.tool_policy == "full"
+    elif args.allow_write_tools:
+        updates["sdk_tool_policy"] = "full"
         updates["sdk_allow_write_tools"] = True
 
     if updates:
@@ -198,6 +203,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"Config      : {cfg_mgr.config_path}")
     print(f"Host        : {status.hostName} ({cfg_mgr.config.bind_host}:{status.port})")
     print(f"SDK Auth    : {cfg_mgr.config.auth_mode} (API key set: {bool(cfg_mgr.config.effective_api_key())})")
+    print(f"Tool Policy : {cfg_mgr.config.effective_tool_policy()}")
     print(f"Tailscale   : {'installed' if status.tailscaleInstalled else 'not found'}")
     print(f"Cloudflared : {'installed' if status.cloudflaredInstalled else 'not found'} (mode={status.cloudflaredMode})")
     print(f"Projects    : {len(projects)}")
@@ -220,7 +226,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_start.add_argument("--managed", action="store_true", help="Run quietly under Antigravity Sidecar")
     p_start.add_argument("--auth-mode", choices=["api_key", "vertex"], default=None)
     p_start.add_argument("--cloudflared", choices=["off", "quick", "named"], default=None)
-    p_start.add_argument("--allow-write-tools", action="store_true", help="Enable SDK file-write/command tools")
+    p_start.add_argument(
+        "--tool-policy",
+        choices=["read_only", "edit_files", "full"],
+        default=None,
+        help="Remote SDK tool policy (read_only, edit_files, or full)",
+    )
+    p_start.add_argument("--allow-write-tools", action="store_true", help="Alias for --tool-policy full")
     p_start.set_defaults(func=cmd_start, interactive_setup=False)
 
     p_pair = sub.add_parser("pair", help="Display current pairing QR code and endpoints")

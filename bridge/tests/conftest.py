@@ -35,6 +35,7 @@ class FakeAgentRuntime(AgentRuntime):
         attachments: list[AttachmentDiskRecord],
         model: str | None,
         emit: RuntimeEventEmitter,
+        system_instructions: str | None = None,
     ) -> TurnHandle:
         self.received_calls.append(
             {
@@ -44,6 +45,7 @@ class FakeAgentRuntime(AgentRuntime):
                 "prompt": prompt,
                 "attachment_ids": [a.info.id for a in attachments],
                 "model": model,
+                "system_instructions": system_instructions,
             }
         )
 

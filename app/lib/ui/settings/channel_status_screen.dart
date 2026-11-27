@@ -15,22 +15,54 @@ class ChannelStatusScreen extends ConsumerStatefulWidget {
 
 class _ChannelStatusScreenState extends ConsumerState<ChannelStatusScreen> {
   ChannelsStatus? _remoteStatus;
+  BridgeSettings? _settings;
   bool _togglingTunnel = false;
+  bool _updatingPolicy = false;
   String? _tunnelError;
+  String? _policyError;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(_loadRemoteChannels);
+    Future.microtask(_loadRemoteState);
   }
 
-  Future<void> _loadRemoteChannels() async {
+  Future<void> _loadRemoteState() async {
     final api = ref.read(activeConnectionProvider).httpApi;
     if (api == null) return;
     try {
       final status = await api.getChannels();
       if (mounted) setState(() => _remoteStatus = status);
     } catch (_) {}
+    try {
+      final settings = await api.getSettings();
+      if (mounted) setState(() => _settings = settings);
+    } catch (_) {}
+  }
+
+  Future<void> _updateToolPolicy(String policy) async {
+    final api = ref.read(activeConnectionProvider).httpApi;
+    if (api == null || _updatingPolicy) return;
+    setState(() {
+      _updatingPolicy = true;
+      _policyError = null;
+    });
+    try {
+      final updated = await api.updateSettings(toolPolicy: policy);
+      if (mounted) {
+        setState(() {
+          _settings = updated;
+          _updatingPolicy = false;
+        });
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() {
+          _updatingPolicy = false;
+          _policyError = err.toString();
+        });
+      }
+    }
   }
 
   Future<void> _toggleQuickTunnel(bool enable) async {
@@ -73,7 +105,7 @@ class _ChannelStatusScreenState extends ConsumerState<ChannelStatusScreen> {
             tooltip: '重新测速',
             onPressed: () async {
               await ref.read(activeConnectionProvider.notifier).reconnect();
-              await _loadRemoteChannels();
+              await _loadRemoteState();
             },
             icon: const Icon(Icons.speed),
           ),
@@ -192,8 +224,69 @@ class _ChannelStatusScreenState extends ConsumerState<ChannelStatusScreen> {
               ),
             ),
           ],
+          if (_settings != null) ...[
+            const SizedBox(height: 20),
+            Text('Agent 远程操作权限', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Card(
+              child: Column(
+                children: [
+                  if (_policyError != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: Text(
+                        _policyError!,
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
+                    ),
+                  _buildPolicyTile(
+                    context,
+                    value: 'read_only',
+                    title: '只读安全模式（默认）',
+                    subtitle: '仅查看文件、搜索代码与检索网页，禁止修改文件与运行命令',
+                    selected: _settings!.toolPolicy == 'read_only',
+                  ),
+                  const Divider(height: 1),
+                  _buildPolicyTile(
+                    context,
+                    value: 'edit_files',
+                    title: '允许修改工作区文件',
+                    subtitle: '可在已登记项目目录内创建与编辑代码文件，禁止运行终端命令',
+                    selected: _settings!.toolPolicy == 'edit_files',
+                  ),
+                  const Divider(height: 1),
+                  _buildPolicyTile(
+                    context,
+                    value: 'full',
+                    title: '完整执行（改文件 + 跑命令）',
+                    subtitle: '允许修改工作区文件并运行终端构建/测试命令，请谨慎开启',
+                    selected: _settings!.toolPolicy == 'full',
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildPolicyTile(
+    BuildContext context, {
+    required String value,
+    required String title,
+    required String subtitle,
+    required bool selected,
+  }) {
+    return ListTile(
+      enabled: !_updatingPolicy,
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        color: selected ? Theme.of(context).colorScheme.primary : null,
+      ),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      onTap: selected ? null : () => _updateToolPolicy(value),
     );
   }
 }

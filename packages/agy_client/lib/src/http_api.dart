@@ -193,5 +193,74 @@ class AgyHttpApi {
     return ChannelsStatus.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
+  Future<List<DesktopConversationSummary>> listDesktopConversations({int limit = 30}) async {
+    final res = await _http.get(
+      _uri('/api/v1/desktop/conversations', {'limit': '$limit'}),
+      headers: authHeaders,
+    );
+    final list = _decode(res) as List<dynamic>;
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(DesktopConversationSummary.fromJson)
+        .toList();
+  }
+
+  Future<DesktopConversationDetail> getDesktopConversation(
+    String convId, {
+    int limit = 80,
+  }) async {
+    final res = await _http.get(
+      _uri('/api/v1/desktop/conversations/$convId', {'limit': '$limit'}),
+      headers: authHeaders,
+    );
+    return DesktopConversationDetail.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  Future<DesktopContinueResult> continueDesktopConversation(
+    String convId, {
+    required String projectId,
+    bool reuseExisting = true,
+    String? model,
+  }) async {
+    final res = await _http.post(
+      _uri('/api/v1/desktop/conversations/$convId/continue'),
+      headers: _jsonHeaders,
+      body: jsonEncode({
+        'projectId': projectId,
+        'reuseExisting': reuseExisting,
+        if (model != null && model.isNotEmpty) 'model': model,
+      }),
+    );
+    return DesktopContinueResult.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  Future<DesktopSyncResult> syncSessionFromDesktop(String sessionId) async {
+    final res = await _http.post(
+      _uri('/api/v1/sessions/$sessionId/sync-desktop'),
+      headers: _jsonHeaders,
+    );
+    return DesktopSyncResult.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  Future<BridgeSettings> getSettings() async {
+    final res = await _http.get(_uri('/api/v1/settings'), headers: authHeaders);
+    return BridgeSettings.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  Future<BridgeSettings> updateSettings({
+    String? toolPolicy,
+    String? defaultModel,
+  }) async {
+    final res = await _http.post(
+      _uri('/api/v1/settings'),
+      headers: _jsonHeaders,
+      body: jsonEncode({
+        if (toolPolicy != null) 'toolPolicy': toolPolicy,
+        if (defaultModel != null) 'defaultModel': defaultModel,
+      }),
+    );
+    return BridgeSettings.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
   void close() => _http.close();
 }

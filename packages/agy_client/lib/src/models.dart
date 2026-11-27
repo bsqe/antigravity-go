@@ -182,6 +182,7 @@ class SessionInfo {
     this.model,
     this.status = 'idle',
     this.lastSeq = 0,
+    this.sourceDesktopId,
     required this.createdAtMs,
     required this.updatedAtMs,
   });
@@ -193,6 +194,7 @@ class SessionInfo {
   final String? model;
   final String status;
   final int lastSeq;
+  final String? sourceDesktopId;
   final int createdAtMs;
   final int updatedAtMs;
 
@@ -201,6 +203,7 @@ class SessionInfo {
     String? model,
     String? status,
     int? lastSeq,
+    String? sourceDesktopId,
     int? updatedAtMs,
   }) {
     return SessionInfo(
@@ -211,6 +214,7 @@ class SessionInfo {
       model: model ?? this.model,
       status: status ?? this.status,
       lastSeq: lastSeq ?? this.lastSeq,
+      sourceDesktopId: sourceDesktopId ?? this.sourceDesktopId,
       createdAtMs: createdAtMs,
       updatedAtMs: updatedAtMs ?? this.updatedAtMs,
     );
@@ -225,6 +229,7 @@ class SessionInfo {
       model: json['model']?.toString(),
       status: (json['status'] ?? 'idle').toString(),
       lastSeq: (json['lastSeq'] as num?)?.toInt() ?? 0,
+      sourceDesktopId: json['sourceDesktopId']?.toString(),
       createdAtMs: (json['createdAtMs'] as num?)?.toInt() ?? 0,
       updatedAtMs: (json['updatedAtMs'] as num?)?.toInt() ?? 0,
     );
@@ -467,6 +472,166 @@ class StreamEvent {
       seq: (json['seq'] as num?)?.toInt(),
       data: (json['data'] as Map<String, dynamic>?) ?? const {},
       timestampMs: (json['timestampMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class DesktopArtifactInfo {
+  const DesktopArtifactInfo({
+    required this.name,
+    required this.sizeBytes,
+    required this.updatedAtMs,
+    this.summary,
+  });
+
+  final String name;
+  final int sizeBytes;
+  final int updatedAtMs;
+  final String? summary;
+
+  factory DesktopArtifactInfo.fromJson(Map<String, dynamic> json) {
+    return DesktopArtifactInfo(
+      name: (json['name'] ?? '').toString(),
+      sizeBytes: (json['sizeBytes'] as num?)?.toInt() ?? 0,
+      updatedAtMs: (json['updatedAtMs'] as num?)?.toInt() ?? 0,
+      summary: json['summary']?.toString(),
+    );
+  }
+}
+
+class DesktopConversationSummary {
+  const DesktopConversationSummary({
+    required this.id,
+    required this.title,
+    this.preview = '',
+    this.turnCount = 0,
+    this.messageCount = 0,
+    this.stepCount = 0,
+    this.artifacts = const [],
+    this.inferredProjectId,
+    this.inferredWorkspacePath,
+    this.linkedSessionId,
+    required this.updatedAtMs,
+  });
+
+  final String id;
+  final String title;
+  final String preview;
+  final int turnCount;
+  final int messageCount;
+  final int stepCount;
+  final List<DesktopArtifactInfo> artifacts;
+  final String? inferredProjectId;
+  final String? inferredWorkspacePath;
+  final String? linkedSessionId;
+  final int updatedAtMs;
+
+  factory DesktopConversationSummary.fromJson(Map<String, dynamic> json) {
+    return DesktopConversationSummary(
+      id: (json['id'] ?? '').toString(),
+      title: (json['title'] ?? 'Desktop Conversation').toString(),
+      preview: (json['preview'] ?? '').toString(),
+      turnCount: (json['turnCount'] as num?)?.toInt() ?? 0,
+      messageCount: (json['messageCount'] as num?)?.toInt() ?? 0,
+      stepCount: (json['stepCount'] as num?)?.toInt() ?? 0,
+      artifacts: (json['artifacts'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(DesktopArtifactInfo.fromJson)
+          .toList(),
+      inferredProjectId: json['inferredProjectId']?.toString(),
+      inferredWorkspacePath: json['inferredWorkspacePath']?.toString(),
+      linkedSessionId: json['linkedSessionId']?.toString(),
+      updatedAtMs: (json['updatedAtMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class DesktopConversationDetail {
+  const DesktopConversationDetail({
+    required this.summary,
+    required this.messages,
+  });
+
+  final DesktopConversationSummary summary;
+  final List<MessageRecord> messages;
+
+  factory DesktopConversationDetail.fromJson(Map<String, dynamic> json) {
+    return DesktopConversationDetail(
+      summary: DesktopConversationSummary.fromJson(
+        (json['summary'] as Map<String, dynamic>?) ?? const {},
+      ),
+      messages: (json['messages'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(MessageRecord.fromJson)
+          .toList(),
+    );
+  }
+}
+
+class DesktopContinueResult {
+  const DesktopContinueResult({
+    required this.session,
+    this.importedMessages = 0,
+    this.reused = false,
+  });
+
+  final SessionInfo session;
+  final int importedMessages;
+  final bool reused;
+
+  factory DesktopContinueResult.fromJson(Map<String, dynamic> json) {
+    return DesktopContinueResult(
+      session: SessionInfo.fromJson(
+        (json['session'] as Map<String, dynamic>?) ?? const {},
+      ),
+      importedMessages: (json['importedMessages'] as num?)?.toInt() ?? 0,
+      reused: json['reused'] == true,
+    );
+  }
+}
+
+class DesktopSyncResult {
+  const DesktopSyncResult({
+    required this.sessionId,
+    required this.sourceDesktopId,
+    this.addedMessages = 0,
+    this.syncedStep = -1,
+  });
+
+  final String sessionId;
+  final String sourceDesktopId;
+  final int addedMessages;
+  final int syncedStep;
+
+  factory DesktopSyncResult.fromJson(Map<String, dynamic> json) {
+    return DesktopSyncResult(
+      sessionId: (json['sessionId'] ?? '').toString(),
+      sourceDesktopId: (json['sourceDesktopId'] ?? '').toString(),
+      addedMessages: (json['addedMessages'] as num?)?.toInt() ?? 0,
+      syncedStep: (json['syncedStep'] as num?)?.toInt() ?? -1,
+    );
+  }
+}
+
+class BridgeSettings {
+  const BridgeSettings({
+    this.toolPolicy = 'read_only',
+    this.defaultModel = '',
+    this.desktopBrainDir = '',
+    this.desktopSyncAvailable = false,
+  });
+
+  final String toolPolicy;
+  final String defaultModel;
+  final String desktopBrainDir;
+  final bool desktopSyncAvailable;
+
+  factory BridgeSettings.fromJson(Map<String, dynamic> json) {
+    return BridgeSettings(
+      toolPolicy: (json['toolPolicy'] ?? 'read_only').toString(),
+      defaultModel: (json['defaultModel'] ?? '').toString(),
+      desktopBrainDir: (json['desktopBrainDir'] ?? '').toString(),
+      desktopSyncAvailable: json['desktopSyncAvailable'] == true,
     );
   }
 }

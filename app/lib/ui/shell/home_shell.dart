@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/connection_state.dart';
+import '../../state/desktop_conversations_state.dart';
 import '../../state/hosts_state.dart';
 import '../../state/projects_sessions_state.dart';
 import '../chat/chat_screen.dart';
+import '../desktop/desktop_conversation_screen.dart';
 import '../hosts/qr_pair_screen.dart';
 import '../settings/channel_status_screen.dart';
 
@@ -38,7 +40,10 @@ class HomeShell extends ConsumerWidget {
             ? _buildConnectionBanner(context, ref, conn)
             : activeSession == null
                 ? _buildEmptyWorkspace(context, ref, workspace)
-                : ChatScreen(sessionId: activeSession.id);
+                : ChatScreen(
+                    sessionId: activeSession.id,
+                    sourceDesktopId: activeSession.sourceDesktopId,
+                  );
 
         return Scaffold(
           appBar: AppBar(
@@ -211,7 +216,7 @@ class _ChannelStatusPill extends StatelessWidget {
   }
 }
 
-class _WorkspaceSidebar extends ConsumerWidget {
+class _WorkspaceSidebar extends ConsumerStatefulWidget {
   const _WorkspaceSidebar({
     required this.conn,
     required this.workspace,
@@ -222,7 +227,14 @@ class _WorkspaceSidebar extends ConsumerWidget {
   final WorkspaceState workspace;
   final bool closeDrawerOnSelect;
 
-  Future<void> _showAddProjectDialog(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<_WorkspaceSidebar> createState() => _WorkspaceSidebarState();
+}
+
+class _WorkspaceSidebarState extends ConsumerState<_WorkspaceSidebar> {
+  int _tabIndex = 0; // 0 = Mobile/Bridge sessions, 1 = Desktop Antigravity conversations
+
+  Future<void> _showAddProjectDialog(BuildContext context) async {
     final nameCtrl = TextEditingController();
     final pathCtrl = TextEditingController();
     final ok = await showDialog<bool>(
@@ -258,11 +270,18 @@ class _WorkspaceSidebar extends ConsumerWidget {
             path: pathCtrl.text.trim(),
           );
     }
+    nameCtrl.dispose();
+    pathCtrl.dispose();
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final conn = widget.conn;
+    final workspace = widget.workspace;
+    final closeDrawerOnSelect = widget.closeDrawerOnSelect;
     final notifier = ref.read(workspaceProvider.notifier);
+    final desktopState = ref.watch(desktopConversationsProvider);
+
     return SafeArea(
       child: Column(
         children: [
@@ -284,91 +303,229 @@ class _WorkspaceSidebar extends ConsumerWidget {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Row(
-              children: [
-                Text('项目工作区', style: Theme.of(context).textTheme.labelLarge),
-                const Spacer(),
-                IconButton(
-                  tooltip: '新增项目',
-                  icon: const Icon(Icons.create_new_folder_outlined, size: 20),
-                  onPressed: conn.isReady ? () => _showAddProjectDialog(context, ref) : null,
+            child: SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment<int>(
+                  value: 0,
+                  icon: Icon(Icons.chat_bubble_outline, size: 16),
+                  label: Text('手机会话'),
                 ),
-                IconButton(
-                  tooltip: '新建会话',
-                  icon: const Icon(Icons.add_comment_outlined, size: 20),
-                  onPressed: conn.isReady && workspace.projects.isNotEmpty
-                      ? () async {
-                          final pid =
-                              workspace.selectedProjectId ?? workspace.projects.first.id;
-                          await notifier.createSession(projectId: pid);
-                          if (closeDrawerOnSelect && context.mounted) Navigator.pop(context);
-                        }
-                      : null,
+                ButtonSegment<int>(
+                  value: 1,
+                  icon: Icon(Icons.desktop_windows_outlined, size: 16),
+                  label: Text('电脑对话'),
                 ),
               ],
+              selected: {_tabIndex},
+              onSelectionChanged: (next) {
+                if (next.isEmpty) return;
+                setState(() => _tabIndex = next.first);
+                if (next.first == 1 && conn.isReady) {
+                  ref.read(desktopConversationsProvider.notifier).refresh(silent: true);
+                }
+              },
             ),
           ),
-          if (workspace.projects.isNotEmpty)
-            SizedBox(
-              height: 40,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+          if (_tabIndex == 0) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+              child: Row(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: const Text('全部'),
-                      selected: workspace.selectedProjectId == null,
-                      onSelected: (_) => notifier.setProjectFilter(null),
-                    ),
+                  Text('项目工作区', style: Theme.of(context).textTheme.labelLarge),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: '新增项目',
+                    icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                    onPressed: conn.isReady ? () => _showAddProjectDialog(context) : null,
                   ),
-                  ...workspace.projects.map(
-                    (p) => Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        label: Text(p.name),
-                        selected: workspace.selectedProjectId == p.id,
-                        onSelected: (_) => notifier.setProjectFilter(p.id),
-                      ),
-                    ),
+                  IconButton(
+                    tooltip: '新建会话',
+                    icon: const Icon(Icons.add_comment_outlined, size: 20),
+                    onPressed: conn.isReady && workspace.projects.isNotEmpty
+                        ? () async {
+                            final pid =
+                                workspace.selectedProjectId ?? workspace.projects.first.id;
+                            await notifier.createSession(projectId: pid);
+                            if (closeDrawerOnSelect && context.mounted) Navigator.pop(context);
+                          }
+                        : null,
                   ),
                 ],
               ),
             ),
-          const Divider(height: 8),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: notifier.refresh,
-              child: ListView.builder(
-                itemCount: workspace.visibleSessions.length,
-                itemBuilder: (context, index) {
-                  final s = workspace.visibleSessions[index];
-                  final selected = s.id == workspace.activeSessionId;
-                  return ListTile(
-                    selected: selected,
-                    leading: Icon(
-                      s.status == 'running'
-                          ? Icons.sync
-                          : Icons.chat_bubble_outline,
-                      size: 18,
+            if (workspace.projects.isNotEmpty)
+              SizedBox(
+                height: 40,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: const Text('全部'),
+                        selected: workspace.selectedProjectId == null,
+                        onSelected: (_) => notifier.setProjectFilter(null),
+                      ),
                     ),
-                    title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(s.projectName, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      onPressed: () => notifier.deleteSession(s.id),
+                    ...workspace.projects.map(
+                      (p) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(p.name),
+                          selected: workspace.selectedProjectId == p.id,
+                          onSelected: (_) => notifier.setProjectFilter(p.id),
+                        ),
+                      ),
                     ),
-                    onTap: () {
-                      notifier.selectSession(s.id);
-                      if (closeDrawerOnSelect) Navigator.pop(context);
-                    },
-                  );
-                },
+                  ],
+                ),
+              ),
+            const Divider(height: 8),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: notifier.refresh,
+                child: ListView.builder(
+                  itemCount: workspace.visibleSessions.length,
+                  itemBuilder: (context, index) {
+                    final s = workspace.visibleSessions[index];
+                    final selected = s.id == workspace.activeSessionId;
+                    return ListTile(
+                      selected: selected,
+                      leading: Icon(
+                        s.status == 'running'
+                            ? Icons.sync
+                            : s.sourceDesktopId != null
+                                ? Icons.desktop_windows_outlined
+                                : Icons.chat_bubble_outline,
+                        size: 18,
+                      ),
+                      title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                        s.sourceDesktopId != null ? '${s.projectName} · 接力' : s.projectName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        onPressed: () => notifier.deleteSession(s.id),
+                      ),
+                      onTap: () {
+                        notifier.selectSession(s.id);
+                        if (closeDrawerOnSelect) Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
               ),
             ),
-          ),
+          ] else ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+              child: Row(
+                children: [
+                  Text('电脑端 Antigravity 对话', style: Theme.of(context).textTheme.labelLarge),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: '刷新电脑对话',
+                    icon: const Icon(Icons.refresh, size: 20),
+                    onPressed: conn.isReady
+                        ? () => ref.read(desktopConversationsProvider.notifier).refresh()
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 8),
+            Expanded(
+              child: _buildDesktopList(context, desktopState, closeDrawerOnSelect),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopList(
+    BuildContext context,
+    DesktopConversationsState desktopState,
+    bool closeDrawerOnSelect,
+  ) {
+    if (desktopState.loading && desktopState.conversations.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (desktopState.error != null && desktopState.conversations.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            '读取电脑端对话失败: ${desktopState.error}',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      );
+    }
+    if (desktopState.conversations.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            '暂未扫描到电脑端 Antigravity 对话记录\n下拉可手动刷新',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(desktopConversationsProvider.notifier).refresh(),
+      child: ListView.builder(
+        itemCount: desktopState.conversations.length,
+        itemBuilder: (context, index) {
+          final item = desktopState.conversations[index];
+          final meta = StringBuffer('${item.turnCount} 轮');
+          if (item.artifacts.isNotEmpty) {
+            meta.write(' · ${item.artifacts.length} 文档');
+          }
+          if (item.linkedSessionId != null) {
+            meta.write(' · 已接力');
+          }
+          return ListTile(
+            leading: Icon(
+              item.linkedSessionId != null
+                  ? Icons.sync_alt_rounded
+                  : Icons.history_rounded,
+              size: 18,
+              color: item.linkedSessionId != null
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+              item.preview.isNotEmpty ? '$meta\n${item.preview}' : meta.toString(),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            isThreeLine: item.preview.isNotEmpty,
+            onTap: () {
+              final nav = Navigator.of(context);
+              if (closeDrawerOnSelect) nav.pop();
+              nav.push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DesktopConversationScreen(
+                    conversationId: item.id,
+                    initialTitle: item.title,
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }

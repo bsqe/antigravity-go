@@ -3,7 +3,9 @@
 仿照 `dsh-Go` 架构设计的 **Google Antigravity 移动端远程操控套件**：
 - **100% 官方合规零改包**：电脑端基于官方公开的 `google-antigravity` Python SDK 与 Antigravity 2.0 原生 **Plugin / Sidecar / Hooks** 机制运行，跨 Windows / macOS / Linux。
 - **跨网极速连接**：局域网扫码配对 + **48 位随机配对口令 + 设备令牌 SHA-256 存证**，自动融合并并行测速 **LAN / Tailscale / Cloudflare Tunnel** 三通道择优连接。
-- **原生 Flutter 客户端**：纯 Dart 协议包 `packages/agy_client` + Flutter/Riverpod 原生 App（`app/`），支持多主机切换、多项目工作区、多会话持久化、思考过程折叠卡片、Markdown 渲染、相册/拍照发图与中途停止生成。
+- **电脑端对话同步 & 一键接力续聊**：只读扫描本机 `~/.gemini/antigravity/brain/` 下的桌面 Antigravity 对话记录（含思考过程、工具调用与 `implementation_plan.md` 等 Artifact），手机端一键导入历史并带上下文接力继续操作，支持增量同步电脑新增轮次。
+- **可控三档远程权限**：支持在手机设置页或命令行随时切换 `read_only`（默认只读）/ `edit_files`（允许改工作区文件）/ `full`（改文件 + 执行命令）。
+- **原生 Flutter 客户端**：纯 Dart 协议包 `packages/agy_client` + Flutter/Riverpod 原生 App（`app/`），支持多主机切换、多项目工作区、电脑对话同步与接力、思考过程折叠卡片、Markdown 渲染、相册/拍照发图与中途停止生成。
 
 ---
 
@@ -56,7 +58,7 @@ python -m venv .venv
 - 查看二维码：`python -m agy_bridge.main pair`
 - 轮换 48 位配对口令（旧码立即作废）：`python -m agy_bridge.main reset-token`
 - 启用免登录 Cloudflare 临时外网隧道（需本机已安装 `cloudflared`）：启动时追加 `--cloudflared quick`
-- 允许 SDK 执行写文件/命令工具（默认只读安全模式）：启动时追加 `--allow-write-tools`
+- 设置远程工具权限档位（默认 `read_only` 只读安全模式）：启动时追加 `--tool-policy edit_files` 或 `--tool-policy full`（也可在手机 App「主机与通道设置」中随时切换）
 
 ### 2. 挂载为 Antigravity 2.0 原生插件 / Sidecar（可选）
 

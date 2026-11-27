@@ -339,6 +339,7 @@ async def _handle_turn_send(
         },
     )
 
+    system_context, _ = store.get_session_runtime_context(session_id)
     try:
         await runtime.start_turn(
             session_id=session_id,
@@ -348,6 +349,7 @@ async def _handle_turn_send(
             attachments=attachments,
             model=model_override or session.model,
             emit=emit_and_persist,
+            system_instructions=system_context,
         )
     except Exception as exc:
         await emit_and_persist("turn.done", {"status": "error", "error": str(exc)})

@@ -23,6 +23,7 @@ class ChatState {
     this.hasMore = false,
     this.loading = false,
     this.uploadingImages = false,
+    this.syncingDesktop = false,
     this.activeTurnId,
     this.pendingImages = const [],
     this.error,
@@ -33,6 +34,7 @@ class ChatState {
   final bool hasMore;
   final bool loading;
   final bool uploadingImages;
+  final bool syncingDesktop;
   final String? activeTurnId;
   final List<PendingImage> pendingImages;
   final String? error;
@@ -44,6 +46,7 @@ class ChatState {
     bool? hasMore,
     bool? loading,
     bool? uploadingImages,
+    bool? syncingDesktop,
     String? activeTurnId,
     bool clearActiveTurn = false,
     List<PendingImage>? pendingImages,
@@ -56,6 +59,7 @@ class ChatState {
       hasMore: hasMore ?? this.hasMore,
       loading: loading ?? this.loading,
       uploadingImages: uploadingImages ?? this.uploadingImages,
+      syncingDesktop: syncingDesktop ?? this.syncingDesktop,
       activeTurnId: clearActiveTurn ? null : (activeTurnId ?? this.activeTurnId),
       pendingImages: pendingImages ?? this.pendingImages,
       error: clearError ? null : (error ?? this.error),
@@ -195,6 +199,25 @@ class ChatNotifier extends AutoDisposeFamilyNotifier<ChatState, String> {
       attachmentIds: uploadedIds,
       model: model,
     );
+  }
+
+  void clearError() {
+    state = state.copyWith(clearError: true);
+  }
+
+  Future<int> syncFromDesktop() async {
+    final api = ref.read(activeConnectionProvider).httpApi;
+    if (api == null) throw StateError('Not connected to Bridge');
+    state = state.copyWith(syncingDesktop: true, clearError: true);
+    try {
+      final res = await api.syncSessionFromDesktop(state.sessionId);
+      await _initialLoad(state.sessionId);
+      state = state.copyWith(syncingDesktop: false);
+      return res.addedMessages;
+    } catch (err) {
+      state = state.copyWith(syncingDesktop: false, error: '同步电脑端失败: $err');
+      rethrow;
+    }
   }
 
   void cancelActiveTurn() {

@@ -47,6 +47,7 @@ class AgentRuntime(ABC):
         attachments: list[AttachmentDiskRecord],
         model: str | None,
         emit: RuntimeEventEmitter,
+        system_instructions: str | None = None,
     ) -> TurnHandle:
         """Start an asynchronous streaming turn and emit protocol deltas via `emit`."""
 

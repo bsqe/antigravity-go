@@ -75,6 +75,7 @@ class SessionInfo(BaseModel):
     model: str | None = None
     status: Literal["idle", "running", "error"] = "idle"
     lastSeq: int = 0
+    sourceDesktopId: str | None = None
     createdAtMs: int
     updatedAtMs: int
 
@@ -150,6 +151,66 @@ class TunnelConfigRequest(BaseModel):
     mode: Literal["off", "quick", "named"]
     token: str | None = None
     hostname: str | None = None
+
+
+# ── Desktop Conversation Sync & Settings ──────────────────────────────────────
+
+
+class DesktopArtifactInfo(BaseModel):
+    name: str
+    sizeBytes: int
+    updatedAtMs: int
+    summary: str | None = None
+
+
+class DesktopConversationSummary(BaseModel):
+    id: str
+    title: str
+    preview: str = ""
+    turnCount: int = 0
+    messageCount: int = 0
+    stepCount: int = 0
+    artifacts: list[DesktopArtifactInfo] = Field(default_factory=list)
+    inferredProjectId: str | None = None
+    inferredWorkspacePath: str | None = None
+    linkedSessionId: str | None = None
+    updatedAtMs: int
+
+
+class DesktopConversationDetailResponse(BaseModel):
+    summary: DesktopConversationSummary
+    messages: list[MessageRecord] = Field(default_factory=list)
+
+
+class DesktopContinueRequest(BaseModel):
+    projectId: str = Field(min_length=1, max_length=64)
+    reuseExisting: bool = True
+    model: str | None = Field(default=None, max_length=120)
+
+
+class DesktopContinueResponse(BaseModel):
+    session: SessionInfo
+    importedMessages: int = 0
+    reused: bool = False
+
+
+class DesktopSyncResponse(BaseModel):
+    sessionId: str
+    sourceDesktopId: str
+    addedMessages: int = 0
+    syncedStep: int = -1
+
+
+class BridgeSettingsResponse(BaseModel):
+    toolPolicy: Literal["read_only", "edit_files", "full"] = "read_only"
+    defaultModel: str = ""
+    desktopBrainDir: str = ""
+    desktopSyncAvailable: bool = False
+
+
+class BridgeSettingsUpdateRequest(BaseModel):
+    toolPolicy: Literal["read_only", "edit_files", "full"] | None = None
+    defaultModel: str | None = Field(default=None, max_length=120)
 
 
 # ── Antigravity Hooks ─────────────────────────────────────────────────────────

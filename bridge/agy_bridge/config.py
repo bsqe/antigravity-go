@@ -50,11 +50,15 @@ class BridgeConfig(BaseModel):
     pairing_token: str = Field(default_factory=lambda: secrets.token_hex(24))
     hook_secret: str = Field(default_factory=lambda: secrets.token_hex(16))
 
-    # Official google-antigravity SDK authentication mode
+    # Official google-antigravity SDK authentication & tool policy
     auth_mode: Literal["api_key", "vertex"] = "api_key"
     gemini_api_key: str = ""
     default_model: str = ""
     sdk_allow_write_tools: bool = False
+    sdk_tool_policy: Literal["read_only", "edit_files", "full"] = "read_only"
+
+    # Optional override for desktop Antigravity brain directory (default: ~/.gemini/antigravity/brain)
+    desktop_brain_dir: str = ""
 
     # Workspace boundary roots (defaults to user home when empty)
     allowed_roots: list[str] = Field(default_factory=list)
@@ -72,6 +76,22 @@ class BridgeConfig(BaseModel):
             or os.environ.get("GOOGLE_API_KEY", "").strip()
             or self.gemini_api_key.strip()
         )
+
+    def effective_tool_policy(self) -> Literal["read_only", "edit_files", "full"]:
+        if self.sdk_tool_policy != "read_only":
+            return self.sdk_tool_policy
+        if self.sdk_allow_write_tools:
+            return "full"
+        return "read_only"
+
+    def effective_desktop_brain_dir(self) -> Path:
+        override = (
+            os.environ.get("AGY_DESKTOP_BRAIN_DIR", "").strip()
+            or self.desktop_brain_dir.strip()
+        )
+        if override:
+            return Path(override).expanduser().resolve()
+        return (Path.home() / ".gemini" / "antigravity" / "brain").resolve()
 
     def effective_allowed_roots(self) -> list[Path]:
         if self.allowed_roots:

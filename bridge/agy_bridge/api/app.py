@@ -16,6 +16,7 @@ from ..store import BridgeStore
 from ..tunnels import CloudflaredManager
 from .routes_auth import router as auth_router
 from .routes_channels import router as channels_router
+from .routes_desktop import router as desktop_router
 from .routes_projects import router as projects_router
 from .routes_sessions import router as sessions_router
 from .ws_stream import ConnectionHub, router as ws_router
@@ -82,6 +83,7 @@ def create_app(
     app.include_router(projects_router)
     app.include_router(sessions_router)
     app.include_router(channels_router)
+    app.include_router(desktop_router)
     app.include_router(hooks_router)
     app.include_router(ws_router)
     return app

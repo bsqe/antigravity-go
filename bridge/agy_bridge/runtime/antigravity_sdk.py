@@ -9,6 +9,7 @@ and invokes native `await response.cancel()` on mid-turn abort.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,12 +29,20 @@ READ_ONLY_TOOLS = (
     "FINISH",
 )
 
+EDIT_FILES_TOOLS = (
+    *READ_ONLY_TOOLS,
+    "CREATE_FILE",
+    "EDIT_FILE",
+)
+
 
 @dataclass(slots=True)
 class _ActiveSessionAgent:
     agent: Any
     workspace_dir: Path
     model: str | None
+    tool_policy: str
+    system_instructions_hash: str
 
 
 class AntigravitySdkRuntime(AgentRuntime):
@@ -47,24 +56,39 @@ class AntigravitySdkRuntime(AgentRuntime):
         self._active_turns: dict[str, TurnHandle] = {}
         self._lock = asyncio.Lock()
 
+    def update_config(self, config: BridgeConfig) -> None:
+        """Apply updated Bridge configuration (e.g., tool policy) for subsequent turns."""
+        self._config = config
+
     def _build_local_config(
         self,
         *,
         session_id: str,
         workspace_dir: Path,
         model: str | None,
+        system_instructions: str | None = None,
     ) -> Any:
         import google.antigravity as ag
         from google.antigravity import types as ag_types
+        from google.antigravity.hooks import policy as ag_policy
 
+        policy_mode = self._config.effective_tool_policy()
         capabilities_kwargs: dict[str, Any] = {}
-        if not self._config.sdk_allow_write_tools:
-            enabled = [
+        extra_policies: list[Any] | None = None
+        if policy_mode == "read_only":
+            capabilities_kwargs["enabled_tools"] = [
                 getattr(ag.BuiltinTools, name)
                 for name in READ_ONLY_TOOLS
                 if hasattr(ag.BuiltinTools, name)
             ]
-            capabilities_kwargs["enabled_tools"] = enabled
+        elif policy_mode == "edit_files":
+            capabilities_kwargs["enabled_tools"] = [
+                getattr(ag.BuiltinTools, name)
+                for name in EDIT_FILES_TOOLS
+                if hasattr(ag.BuiltinTools, name)
+            ]
+        elif policy_mode == "full":
+            extra_policies = [ag_policy.allow_all()]
 
         sdk_conversation_id = (
             session_id
@@ -80,6 +104,10 @@ class AntigravitySdkRuntime(AgentRuntime):
             "save_dir": str(session_save_dir),
             "capabilities": ag.CapabilitiesConfig(**capabilities_kwargs),
         }
+        if extra_policies is not None:
+            config_kwargs["policies"] = extra_policies
+        if system_instructions and system_instructions.strip():
+            config_kwargs["system_instructions"] = system_instructions.strip()
 
         effective_model = (model or self._config.default_model or "").strip()
         if effective_model:
@@ -101,8 +129,12 @@ class AntigravitySdkRuntime(AgentRuntime):
         session_id: str,
         workspace_dir: Path,
         model: str | None,
+        system_instructions: str | None = None,
     ) -> Any:
         import google.antigravity as ag
+
+        policy_mode = self._config.effective_tool_policy()
+        sys_hash = hashlib.sha256((system_instructions or "").encode("utf-8")).hexdigest()
 
         async with self._lock:
             existing = self._agents.get(session_id)
@@ -110,6 +142,8 @@ class AntigravitySdkRuntime(AgentRuntime):
                 existing is not None
                 and existing.workspace_dir == workspace_dir
                 and existing.model == model
+                and existing.tool_policy == policy_mode
+                and existing.system_instructions_hash == sys_hash
             ):
                 return existing.agent
 
@@ -120,6 +154,7 @@ class AntigravitySdkRuntime(AgentRuntime):
                 session_id=session_id,
                 workspace_dir=workspace_dir,
                 model=model,
+                system_instructions=system_instructions,
             )
             agent = ag.Agent(local_cfg)
             await agent.__aenter__()
@@ -127,6 +162,8 @@ class AntigravitySdkRuntime(AgentRuntime):
                 agent=agent,
                 workspace_dir=workspace_dir,
                 model=model,
+                tool_policy=policy_mode,
+                system_instructions_hash=sys_hash,
             )
             return agent
 
@@ -164,6 +201,7 @@ class AntigravitySdkRuntime(AgentRuntime):
         attachments: list[AttachmentDiskRecord],
         model: str | None,
         emit: RuntimeEventEmitter,
+        system_instructions: str | None = None,
     ) -> TurnHandle:
         from google.antigravity import types as ag_types
 
@@ -185,6 +223,7 @@ class AntigravitySdkRuntime(AgentRuntime):
                     session_id=session_id,
                     workspace_dir=workspace_dir,
                     model=model,
+                    system_instructions=system_instructions,
                 )
                 payload = self._build_prompt_payload(prompt, attachments)
                 response = await agent.chat(payload)
