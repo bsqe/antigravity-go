@@ -9,6 +9,30 @@
 
 ---
 
+## 效果展示
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/images/remote-control.jpg" width="250" alt="Cloudflare 跨网远距离操控电脑" /><br />
+      <b>5G / Cloudflare 远距离操控</b><br />
+      <sub>跨网直连电脑工作区，远程调用工具执行任务</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/images/desktop-handoff.jpg" width="250" alt="电脑端对话同步与一键接力" /><br />
+      <b>电脑端对话同步 & 一键接力</b><br />
+      <sub>查看桌面历史与工具调用，带上下文无缝续聊</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/images/channels-permissions.jpg" width="250" alt="多通道自动测速与三档远程权限" /><br />
+      <b>多通道择优 & 三档权限控制</b><br />
+      <sub>LAN / Tailscale / Cloudflare 自动切换，按需开关读写权限</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## 目录结构
 
 | 路径 | 说明 |
