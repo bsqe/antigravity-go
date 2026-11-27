@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -28,7 +30,35 @@ CLOUDFLARED_CANDIDATES = (
 )
 
 
+def find_bundled_cloudflared() -> str | None:
+    """Locate `cloudflared` bundled inside PyInstaller `_MEIPASS` or `bridge/vendor/bin`."""
+    env_override = os.environ.get("AGY_CLOUDFLARED_PATH", "").strip()
+    if env_override:
+        p = Path(env_override).expanduser()
+        if p.is_file():
+            return str(p.resolve())
+
+    binary_name = "cloudflared.exe" if sys.platform == "win32" else "cloudflared"
+    search_paths: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        search_paths.append(Path(meipass) / "agy_bridge" / "bin" / binary_name)
+        search_paths.append(Path(meipass) / binary_name)
+    if getattr(sys, "frozen", False):
+        search_paths.append(Path(sys.executable).resolve().parent / binary_name)
+    # Dev repo fallback: bridge/vendor/bin/cloudflared.exe
+    search_paths.append(Path(__file__).resolve().parents[2] / "vendor" / "bin" / binary_name)
+
+    for candidate in search_paths:
+        if candidate.is_file():
+            return str(candidate.resolve())
+    return None
+
+
 def find_cloudflared_binary() -> str | None:
+    bundled = find_bundled_cloudflared()
+    if bundled:
+        return bundled
     for candidate in CLOUDFLARED_CANDIDATES:
         resolved = shutil.which(candidate)
         if resolved:
@@ -85,10 +115,15 @@ class CloudflaredManager:
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._url_ready = asyncio.Event()
+        self._recent_logs: deque[str] = deque(maxlen=15)
 
     @property
     def installed(self) -> bool:
         return find_cloudflared_binary() is not None
+
+    @property
+    def bundled_available(self) -> bool:
+        return find_bundled_cloudflared() is not None
 
     def current_endpoint(self) -> ChannelEndpoint | None:
         if not self.state.running or not self.state.public_url:
@@ -118,6 +153,7 @@ class CloudflaredManager:
             return self.state
 
         self._url_ready.clear()
+        self._recent_logs.clear()
         self.state = TunnelState(mode="quick", running=False)
         spawn_kwargs: dict[str, object] = {
             "stdout": asyncio.subprocess.PIPE,
@@ -129,6 +165,8 @@ class CloudflaredManager:
             binary,
             "tunnel",
             "--no-autoupdate",
+            "--protocol",
+            "http2",
             "--url",
             f"http://127.0.0.1:{self.local_port}",
             **spawn_kwargs,  # type: ignore[arg-type]
@@ -137,7 +175,12 @@ class CloudflaredManager:
         try:
             await asyncio.wait_for(self._url_ready.wait(), timeout=timeout_sec)
         except TimeoutError:
-            self.state.last_error = "Timed out waiting for trycloudflare.com URL"
+            tail = " | ".join(list(self._recent_logs)[-3:])
+            self.state.last_error = (
+                f"Timed out waiting for trycloudflare.com URL ({tail})"
+                if tail
+                else "Timed out waiting for trycloudflare.com URL"
+            )
         return self.state
 
     async def start_named(self, token: str, hostname: str) -> TunnelState:
@@ -220,6 +263,8 @@ class CloudflaredManager:
                 if not raw:
                     break
                 line = raw.decode("utf-8", errors="replace").strip()
+                if line:
+                    self._recent_logs.append(line)
                 if expect_quick_url:
                     match = TRYCLOUDFLARE_RE.search(line)
                     if match:

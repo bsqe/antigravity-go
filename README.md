@@ -26,11 +26,11 @@
 
 ### 1. 启动电脑端 Bridge（两种方式任选）
 
-#### 方式 A：Windows 一键免环境 `.exe`（推荐）
-- 可直接从 GitHub Actions Artifacts 下载 `antigravity-go-bridge-win-x64.zip` 解压，或本机运行 `.\scripts\build-exe.ps1` 本地打包。
+#### 方式 A：Windows 一键免环境 `.exe`（推荐，已内置 Cloudflare 公网隧道）
+- 可直接从 GitHub Actions Artifacts 下载 `antigravity-go-bridge-win-x64.zip` 解压，或本机运行 `.\scripts\build-exe.ps1` 本地打包（脚本会自动拉取并打入官方 `cloudflared.exe`）。
 - **双击 `AntigravityGoBridge.exe`**（务必保留同目录下的 `_internal` 文件夹）：
-  - 首次运行会自动进入交互式引导：输入 API Key（支持 `AIza...` Gemini API Key 或 `AQ....` Vertex AI Express Mode Key）和本地项目目录，自动写入配置与白名单。
-  - 启动后直接显示终端配对二维码，等待手机 App 扫码连接。
+  - 首次运行会自动进入交互式引导：输入 API Key（支持 Google AI Studio 新版 `AQ....` 或旧版 `AIza...` Key）和本地项目目录，自动写入配置与白名单。
+  - **一键自动拉起内置 Cloudflare 免费公网加密隧道**（免注册、不与手机其他 VPN 冲突），并在终端二维码中同时写入局域网地址和 `https://xxxx.trycloudflare.com` 公网地址——手机连 5G 或在校园网 AP 隔离下也能远距离直接扫码连接！若只想纯局域网运行，可用命令行加 `start --cloudflared off`。
 
 #### 方式 B：Python 源码运行（Windows / macOS / Linux）
 

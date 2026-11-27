@@ -137,14 +137,50 @@ def cmd_start(args: argparse.Namespace) -> int:
         cfg = cfg_mgr.save(cfg.model_copy(update=updates))
 
     cf_mgr = CloudflaredManager(cfg.port)
+    is_double_click = bool(getattr(args, "double_click_mode", False))
+    auto_quick = (
+        is_double_click
+        and cf_mgr.installed
+        and cfg.cloudflared_mode == "off"
+        and not args.local_only
+    )
+    expect_tunnel = (
+        (auto_quick or cfg.cloudflared_mode in ("quick", "named"))
+        and cf_mgr.installed
+        and not args.local_only
+    )
+
+    on_tunnel_ready = None
     if not args.managed:
-        _print_pairing_banner(cfg_mgr, cf_mgr)
+        if expect_tunnel:
+            print(
+                "\n[Cloudflare] 正在启动内置公网加密隧道（免注册，支持 5G 远距离连接），请稍候 2-5 秒...",
+                flush=True,
+            )
+
+            def _after_tunnel_ready() -> None:
+                if cf_mgr.state.running and cf_mgr.state.public_url:
+                    print(f"[Cloudflare] 公网隧道已就绪: {cf_mgr.state.public_url}", flush=True)
+                else:
+                    detail = cf_mgr.state.last_error or "网络不可达"
+                    print(f"[WARN] Cloudflare 隧道未就绪（{detail}），已自动回退为局域网模式。", flush=True)
+                _print_pairing_banner(cfg_mgr, cf_mgr)
+
+            on_tunnel_ready = _after_tunnel_ready
+        else:
+            _print_pairing_banner(cfg_mgr, cf_mgr)
 
     logging.basicConfig(
         level=logging.WARNING if args.managed else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
-    app = create_app(config_manager=cfg_mgr, tunnel_manager=cf_mgr)
+    app = create_app(
+        config_manager=cfg_mgr,
+        tunnel_manager=cf_mgr,
+        auto_start_tunnel=not args.local_only,
+        force_quick_tunnel=auto_quick,
+        on_tunnel_ready=on_tunnel_ready,
+    )
     uvicorn.run(
         app,
         host=cfg.bind_host,
@@ -205,7 +241,12 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"SDK Auth    : {cfg_mgr.config.auth_mode} (API key set: {bool(cfg_mgr.config.effective_api_key())})")
     print(f"Tool Policy : {cfg_mgr.config.effective_tool_policy()}")
     print(f"Tailscale   : {'installed' if status.tailscaleInstalled else 'not found'}")
-    print(f"Cloudflared : {'installed' if status.cloudflaredInstalled else 'not found'} (mode={status.cloudflaredMode})")
+    cf_label = (
+        "bundled"
+        if cf_mgr.bundled_available
+        else ("installed" if status.cloudflaredInstalled else "not found")
+    )
+    print(f"Cloudflared : {cf_label} (mode={status.cloudflaredMode})")
     print(f"Projects    : {len(projects)}")
     print(f"Devices     : {len([d for d in devices if not d.revoked])} active / {len(devices)} total")
     return 0
@@ -233,7 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Remote SDK tool policy (read_only, edit_files, or full)",
     )
     p_start.add_argument("--allow-write-tools", action="store_true", help="Alias for --tool-policy full")
-    p_start.set_defaults(func=cmd_start, interactive_setup=False)
+    p_start.set_defaults(func=cmd_start, interactive_setup=False, double_click_mode=False)
 
     p_pair = sub.add_parser("pair", help="Display current pairing QR code and endpoints")
     p_pair.set_defaults(func=cmd_pair)
@@ -266,6 +307,7 @@ def cli(argv: list[str] | None = None) -> int:
     if double_click_mode:
         args = parser.parse_args(["start"])
         args.interactive_setup = True
+        args.double_click_mode = True
     else:
         args = parser.parse_args(raw_args)
         if not hasattr(args, "func"):

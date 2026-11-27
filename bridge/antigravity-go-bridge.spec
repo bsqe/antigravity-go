@@ -6,6 +6,8 @@ official `google.antigravity/bin/localharness.exe` runtime is never extracted
 to %TEMP% on every launch.
 """
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import (
     collect_data_files,
     collect_dynamic_libs,
@@ -22,6 +24,9 @@ datas += copy_metadata("pydantic")
 
 binaries = []
 binaries += collect_dynamic_libs("google.antigravity")
+bundled_cloudflared = Path("vendor/bin/cloudflared.exe")
+if bundled_cloudflared.is_file():
+    binaries.append((str(bundled_cloudflared), "agy_bridge/bin"))
 
 hiddenimports = []
 hiddenimports += collect_submodules("agy_bridge")

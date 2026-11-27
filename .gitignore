@@ -2,6 +2,7 @@
 bridge/.venv/
 bridge/build/
 bridge/dist/
+bridge/vendor/
 __pycache__/
 *.py[cod]
 *.egg-info/

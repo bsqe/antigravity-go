@@ -89,6 +89,27 @@ def test_cloudflare_token_validation() -> None:
     assert bad_err != ""
 
 
+def test_find_bundled_cloudflared_resolution(tmp_path: Path, monkeypatch: Any) -> None:
+    from agy_bridge.tunnels import cloudflared as cf_mod
+
+    # 1. Explicit AGY_CLOUDFLARED_PATH override
+    custom_bin = tmp_path / "cloudflared.exe"
+    custom_bin.write_bytes(b"MZ")
+    monkeypatch.setenv("AGY_CLOUDFLARED_PATH", str(custom_bin))
+    assert cf_mod.find_bundled_cloudflared() == str(custom_bin.resolve())
+    assert cf_mod.find_cloudflared_binary() == str(custom_bin.resolve())
+
+    # 2. Frozen PyInstaller _MEIPASS lookup
+    monkeypatch.delenv("AGY_CLOUDFLARED_PATH", raising=False)
+    meipass = tmp_path / "_internal"
+    bin_name = "cloudflared.exe" if sys.platform == "win32" else "cloudflared"
+    bundled = meipass / "agy_bridge" / "bin" / bin_name
+    bundled.parent.mkdir(parents=True, exist_ok=True)
+    bundled.write_bytes(b"MZ")
+    monkeypatch.setattr(sys, "_MEIPASS", str(meipass), raising=False)
+    assert cf_mod.find_bundled_cloudflared() == str(bundled.resolve())
+
+
 def test_plugin_manifests_are_valid_json() -> None:
     plugin_dir = REPO_ROOT / "plugin"
     plugin_json = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))

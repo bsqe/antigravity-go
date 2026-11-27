@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -29,6 +29,8 @@ def create_app(
     runtime: AgentRuntime | None = None,
     tunnel_manager: CloudflaredManager | None = None,
     auto_start_tunnel: bool = True,
+    force_quick_tunnel: bool = False,
+    on_tunnel_ready: Callable[[], None] | None = None,
 ) -> FastAPI:
     cfg_mgr = config_manager or ConfigManager()
     db_store = store or BridgeStore(cfg_mgr.db_path)
@@ -42,7 +44,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if auto_start_tunnel:
             cfg = cfg_mgr.config
-            if cfg.cloudflared_mode == "quick" and cf_manager.installed:
+            if (force_quick_tunnel or cfg.cloudflared_mode == "quick") and cf_manager.installed:
                 await cf_manager.start_quick()
             elif (
                 cfg.cloudflared_mode == "named"
@@ -51,6 +53,8 @@ def create_app(
                 and cfg.cloudflared_hostname
             ):
                 await cf_manager.start_named(cfg.cloudflared_token, cfg.cloudflared_hostname)
+        if on_tunnel_ready is not None:
+            on_tunnel_ready()
         try:
             yield
         finally:

@@ -42,6 +42,7 @@ def collect_channel_status(
         pairing_token=cfg.pairing_token,
         endpoints=endpoints,
     )
+    effective_cf_mode = tunnel_mgr.state.mode if tunnel_mgr.state.running else cfg.cloudflared_mode
     return ChannelsStatusResponse(
         hostName=cfg.host_name,
         port=cfg.port,
@@ -49,7 +50,7 @@ def collect_channel_status(
         endpoints=endpoints,
         tailscaleInstalled=ts_installed,
         cloudflaredInstalled=tunnel_mgr.installed,
-        cloudflaredMode=cfg.cloudflared_mode,
+        cloudflaredMode=effective_cf_mode,
         cloudflaredRunning=tunnel_mgr.state.running,
         hasNamedTunnelToken=bool(cfg.cloudflared_token),
     )
