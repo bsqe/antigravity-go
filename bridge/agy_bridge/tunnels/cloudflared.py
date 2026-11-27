@@ -277,3 +277,8 @@ class CloudflaredManager:
         finally:
             if self._proc is not None and self._proc.returncode is not None:
                 self.state.running = False
+            if expect_quick_url and not self._url_ready.is_set():
+                tail = " | ".join(list(self._recent_logs)[-2:])
+                if tail and not self.state.last_error:
+                    self.state.last_error = tail
+                self._url_ready.set()
